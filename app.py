@@ -20,11 +20,11 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Session State Initialization
+# Session State
 if "api_key" not in st.session_state:
     st.session_state.api_key = ""
 
-# Style Injection
+# Custom CSS
 st.markdown("""
 <style>
 .cta-box {
@@ -33,120 +33,135 @@ st.markdown("""
     margin: 2rem 0;
     background: #f8f9fa;
     border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
-.header-text {
-    color: #2c3e50;
-    border-bottom: 2px solid #2c3e50;
-    padding-bottom: 0.5rem;
+.custom-headings textarea {
+    font-size: 14px !important;
 }
 </style>
 """, unsafe_allow_html=True)
 
-def generate_content(keyword, content_type, creativity, heading_style, content_length, unique_content):
+def generate_content(keyword, content_type, creativity, headings, content_length, unique_content):
     """
-    Generate anti-AI detected legal content with enhanced uniqueness
+    Generate content with custom headings and anti-plagiarism measures
     """
     if not st.session_state.api_key:
         return "⚠️ Please enter a valid OpenAI API key in the sidebar"
     
     client = OpenAI(api_key=st.session_state.api_key)
     
-    uniqueness_rules = """
-    - Include specific references to Manchester County Court procedures
-    - Mention 2-3 local Manchester legal precedents
-    - Use British legal terminology variations (e.g., "solicitor" not "attorney")
-    - Add hypothetical client scenarios from Greater Manchester
+    # Structure handling
+    heading_instructions = ""
+    if headings:
+        heading_list = [h.strip() for h in headings.split('\n') if h.strip()]
+        heading_instructions = f"STRICT STRUCTURE:\n- Must use these exact headings in order:\n" + "\n".join([f"{i+1}. {h}" for i, h in enumerate(heading_list)])
+    else:
+        heading_instructions = "Create logical headings following UK legal content best practices"
+
+    uniqueness_rules = f"""
+    - Include 2-3 Manchester-specific legal precedents from the last 3 years
+    - Reference Greater Manchester County Court procedures
+    - Use uncommon British legal terminology variants
+    - Add hypothetical scenarios from Manchester businesses
     """ if unique_content else ""
-    
+
     prompt = f"""
-    Create {content_length} of {content_type} content about '{keyword}' for a Manchester solicitors firm.
-    Heading Style: {heading_style}
+    Create {content_length} of {content_type} content about '{keyword}' with these requirements:
     
-    Strict Requirements:
-    1. Zero AI detection patterns
-    2. Include 3-5 Manchester-specific legal references
-    3. Use markdown formatting with H2/H3 headings
-    4. Add 2 client case studies (fictional but realistic)
-    5. Include current UK legal statistics (2023-2024)
-    6. Apply natural keyword variations
-    7. Follow E-A-T (Expertise, Authoritativeness, Trustworthiness) principles
-    8. Use Oxford comma and UK English spelling
-    9. {uniqueness_rules}
+    1. COMPLETE HEADING COMPLIANCE:
+    {heading_instructions}
     
-    Structure:
-    - Introduction with local relevance
-    - Detailed legal analysis section
-    - Client success story example
-    - Practical advice section
-    - FAQ with 3-5 questions
-    - Conclusion with strong CTA
+    2. ANTI-PLAGIARISM MEASURES:
+    - Zero duplicate content from existing online sources
+    - 100% original phrasing and structure
+    - Unique case studies with fictional but realistic details
+    - Use British English spellings (e.g., colour, organisation)
+    {uniqueness_rules}
+    
+    3. CONTENT RULES:
+    - Markdown formatting with H2/H3 headings
+    - Include 3-5 statistics from UK Ministry of Justice (2023-2024)
+    - Add 2 client testimonials (fictional but realistic names)
+    - Practical advice section with numbered steps
+    - FAQ section with 5 questions
+    - Local Manchester service areas focus
+    
+    4. WRITING STYLE:
+    - Expert but approachable tone
+    - Avoid legal jargon without explanations
+    - Use Oxford comma consistently
+    - Vary sentence length and structure
     """
     
     try:
         response = client.chat.completions.create(
             model="gpt-4-turbo",
             messages=[
-                {"role": "system", "content": "You are a senior legal writer specializing in Manchester law with 15 years experience."},
+                {"role": "system", "content": "You are a Manchester legal content specialist with 10 years experience."},
                 {"role": "user", "content": prompt}
             ],
             temperature=creativity,
             max_tokens=4000,
-            frequency_penalty=0.8,
-            presence_penalty=0.6
+            frequency_penalty=0.85,
+            presence_penalty=0.7
         )
         content = response.choices[0].message.content
         return f"{content}\n{CTA}"
     except Exception as e:
         return f"❌ Error: {str(e)}"
 
-# Sidebar Configuration
+# Sidebar
 with st.sidebar:
     st.header("⚙️ Configuration")
-    st.session_state.api_key = st.text_input("Enter OpenAI API Key:", type="password")
-    content_type = st.selectbox("Content Type", ["Service Page", "Blog Article", "Case Study", "Practice Area Guide"])
-    heading_style = st.selectbox("Heading Style", ["Professional", "Client-Focused", "Question-Based", "Solution-Oriented"])
-    content_length = st.selectbox("Content Length", ["Short (300-500 words)", "Standard (500-800 words)", "Comprehensive (800-1200 words)"])
+    st.session_state.api_key = st.text_input("OpenAI API Key:", type="password")
+    content_type = st.selectbox("Content Type", ["Service Page", "Blog Article", "Guide", "Case Study"])
+    content_length = st.selectbox("Length", ["Brief (300-500 words)", "Standard (500-800)", "Detailed (800-1200)"])
+    creativity = st.slider("Creativity", 0.0, 1.0, 0.3)
     unique_content = st.checkbox("Enhanced Uniqueness Mode", True)
-    creativity = st.slider("Creativity Level", 0.0, 1.0, 0.35, help="Lower = More Technical, Higher = More Creative")
+    
+    # Custom headings input
+    st.markdown('<div class="custom-headings">', unsafe_allow_html=True)
+    user_headings = st.text_area(
+        "Custom Headings (optional):",
+        height=150,
+        help="Enter one heading per line. Content will follow this exact structure"
+    )
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # Main Interface
-st.title("📝 Manchester Legal Content Generator")
-st.markdown('<div class="header-text">Create Unique, AI-Undetectable Legal Content</div>', unsafe_allow_html=True)
+st.title("📝 Legal Content Generator")
+st.markdown(f"**Create Unique, Custom-Structured Content for {PHONE}**")
 
-keyword = st.text_input("🔍 Enter Primary Legal Keyword/Phrase:", 
-                       placeholder="Employment tribunal representation in Manchester")
+keyword = st.text_input("Primary Keyword:", placeholder="Employment law Manchester")
+generate_btn = st.button("Generate Content", type="primary")
 
-if st.button("Generate Content", type="primary"):
+if generate_btn:
     if not keyword:
-        st.warning("Please enter a legal keyword/phrase")
+        st.warning("Please enter a keyword")
     else:
-        with st.spinner("🔍 Crafting 100% Unique Content (60-90 seconds)..."):
-            generated_content = generate_content(
+        with st.spinner("🔍 Crafting 100% Original Content (2-3 minutes)..."):
+            content = generate_content(
                 keyword=keyword,
                 content_type=content_type,
                 creativity=creativity,
-                heading_style=heading_style,
+                headings=user_headings,
                 content_length=content_length,
                 unique_content=unique_content
             )
             
-            st.markdown(generated_content, unsafe_allow_html=True)
+            st.markdown(content, unsafe_allow_html=True)
             
-            # Post-Generation Checklist
-            st.success("✅ Content Generated Successfully! Next Steps:")
+            # Validation checklist
+            st.success("✅ Success! Quality Control Steps:")
             st.markdown("""
-            1. Run through [Originality.ai](https://originality.ai) plagiarism check
-            2. Verify Manchester legal references
-            3. Add firm-specific success metrics
-            4. Check keyword density with [Ahrefs](https://ahrefs.com)
-            5. Legal compliance review by partner
-            6. Add relevant case studies
+            1. Check heading structure matches requirements
+            2. Verify Manchester-specific references
+            3. Run through plagiarism checker
+            4. Review legal accuracy
+            5. Add firm contact details
             """)
 
-# Footer
 st.markdown("---")
 st.markdown(f"""
-**Need Immediate Assistance?**  
-📞 {PHONE} | 📅 [Schedule Strategic Consultation]({APPOINTMENT_URL})
+**Need Help?**  
+📞 {PHONE} | 📅 [Book Consultation]({APPOINTMENT_URL})
 """)
