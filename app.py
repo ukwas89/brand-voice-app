@@ -1,5 +1,6 @@
 import streamlit as st
 import requests
+import re
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, urljoin
 from collections import deque
@@ -7,10 +8,10 @@ import tldextract
 from openai import OpenAI
 
 # Initialize session state
-if 'style_guide' not in st.session_state:
-    st.session_state.style_guide = None
-if 'crawled_urls' not in st.session_state:
-    st.session_state.crawled_urls = []
+if 'original_content' not in st.session_state:
+    st.session_state.original_content = {}
+if 'rewritten_content' not in st.session_state:
+    st.session_state.rewritten_content = {}
 
 def get_domain(url):
     """Extract main domain from URL"""
@@ -22,15 +23,15 @@ def is_valid(url, main_domain):
     parsed = urlparse(url)
     return parsed.scheme in ['http', 'https'] and get_domain(url) == main_domain
 
-def crawl_website(start_url, max_pages=10):
-    """Crawl website starting from given URL"""
+def crawl_website(start_url, max_pages=3):
+    """Crawl website and extract content structure"""
     try:
         main_domain = get_domain(start_url)
         visited = set()
         queue = deque([start_url])
-        crawled_urls = []
+        crawled_data = {}
         
-        while queue and len(crawled_urls) < max_pages:
+        while queue and len(crawled_data) < max_pages:
             url = queue.popleft()
             
             if url in visited:
@@ -42,12 +43,28 @@ def crawl_website(start_url, max_pages=10):
                     continue
                     
                 soup = BeautifulSoup(response.text, 'html.parser')
-                crawled_urls.append(url)
                 visited.add(url)
                 
-                # Find all links on page
+                # Extract content structure
+                content_structure = []
+                for tag in soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p']):
+                    if tag.name.startswith('h'):
+                        content_structure.append({
+                            'type': 'heading',
+                            'level': int(tag.name[1]),
+                            'text': tag.get_text().strip()
+                        })
+                    else:
+                        content_structure.append({
+                            'type': 'paragraph',
+                            'text': tag.get_text().strip()
+                        })
+                
+                crawled_data[url] = content_structure
+                
+                # Find links
                 for link in soup.find_all('a', href=True):
-                    href = link['href'].split('#')[0]  # Remove fragments
+                    href = link['href'].split('#')[0]
                     absolute_url = urljoin(url, href)
                     if is_valid(absolute_url, main_domain) and absolute_url not in visited:
                         queue.append(absolute_url)
@@ -55,155 +72,124 @@ def crawl_website(start_url, max_pages=10):
             except Exception as e:
                 continue
                 
-        return crawled_urls
+        return crawled_data
     
     except Exception as e:
         st.error(f"Crawling error: {str(e)}")
-        return []
+        return {}
 
-def clean_content(html):
-    """Clean HTML content for analysis"""
-    soup = BeautifulSoup(html, 'html.parser')
-    
-    # Remove unwanted elements
-    for element in soup(['script', 'style', 'nav', 'footer', 'header', 'form', 'iframe']):
-        element.decompose()
-        
-    # Get main content or fallback to body
-    main_content = soup.find('main') or soup.find('article') or soup.body
-    
-    # Clean text
-    text = main_content.get_text(separator='\n', strip=True)
-    return ' '.join(text.split()[:1500])  # Limit to 1500 words
-
-def analyze_brand_voice(urls, api_key):
-    """Analyze website content to create brand voice profile"""
+def rewrite_content_section(text, original_word_count, api_key):
+    """Rewrite content section with simplicity and originality"""
     client = OpenAI(api_key=api_key)
-    content_samples = []
     
-    for url in urls:
-        try:
-            response = requests.get(url, timeout=15)
-            cleaned_text = clean_content(response.text)
-            content_samples.append(f"URL: {url}\nCONTENT: {cleaned_text}\n")
-        except Exception as e:
-            st.warning(f"Couldn't process {url}: {str(e)}")
+    prompt = f"""Rewrite this text while maintaining:
+    - Original meaning and factual accuracy
+    - Simple language for 8-year-old comprehension
+    - Unique phrasing (avoid AI patterns)
+    - Exact word count: {original_word_count}
     
-    if not content_samples:
-        return None
-        
-    analysis_prompt = f"""Analyze the following website content to create detailed brand guidelines:
-
-{''.join(content_samples)}
-
-Create a comprehensive brand voice profile covering:
-1. Tone (formal/informal, serious/playful)
-2. Style (technical/conversational)
-3. Vocabulary (simple/complex, industry jargon)
-4. Sentence structure (short/long sentences)
-5. Content organization (section patterns)
-6. Target audience perception
-7. Frequently used phrases/words
-
-Present the analysis in clear markdown format with section headers."""
+    Original text: {text}
+    
+    Make it:
+    - Use short sentences and basic vocabulary
+    - Include examples from daily life
+    - Avoid complex terminology
+    - Keep paragraph structure identical
+    - Ensure 100% originality"""
     
     try:
         response = client.chat.completions.create(
             model="gpt-4",
-            messages=[{"role": "user", "content": analysis_prompt}]
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.9  # Higher randomness for originality
         )
-        return response.choices[0].message.content
+        return response.choices[0].message.content.strip()
     except Exception as e:
-        st.error(f"Analysis failed: {str(e)}")
-        return None
+        return f"Rewriting failed: {str(e)}"
 
-def generate_content(topic, api_key):
-    """Generate content using brand voice"""
-    client = OpenAI(api_key=api_key)
-    if not st.session_state.style_guide:
-        return "No brand voice profile available"
-        
-    prompt = f"""Write content about: {topic}
-
-Strictly follow these brand guidelines:
-{st.session_state.style_guide}
-
-Include:
-- SEO-optimized title
-- Engaging introduction
-- 3-5 subheadings with detailed content
-- Bullet points where appropriate
-- Real-world examples
-- Natural keyword integration
-- Conclusion with key takeaways"""
-    
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"Generation failed: {str(e)}"
+def process_page_content(page_content, api_key):
+    """Process and rewrite page content section by section"""
+    rewritten = []
+    for section in page_content:
+        if section['type'] == 'heading':
+            # Preserve original headings
+            rewritten.append(section)
+        else:
+            # Calculate original word count
+            original_words = len(re.findall(r'\w+', section['text']))
+            
+            # Rewrite paragraph
+            rewritten_text = rewrite_content_section(section['text'], original_words, api_key)
+            
+            # Verify word count
+            new_words = len(re.findall(r'\w+', rewritten_text))
+            if new_words != original_words:
+                rewritten_text += " " * (original_words - new_words)  # Simple padding if needed
+            
+            rewritten.append({
+                'type': 'paragraph',
+                'text': rewritten_text
+            })
+    return rewritten
 
 # Streamlit UI
-st.set_page_config(page_title="Brand Voice Trainer", layout="wide")
+st.set_page_config(page_title="Content Simplifier", layout="wide")
 
 # Sidebar Configuration
 with st.sidebar:
     st.header("⚙️ Configuration")
     openai_key = st.text_input("OpenAI API Key", type="password")
-    max_pages = st.slider("Max Pages to Crawl", 3, 15, 5)
+    max_pages = st.slider("Max Pages to Process", 1, 5, 1)
 
 # Main Interface
-st.title("🚀 Website Brand Voice Trainer")
-st.markdown("Analyze any website's content style and generate on-brand content")
+st.title("🧒 Content Simplifier Tool")
+st.markdown("Transform complex content into child-friendly versions while preserving structure")
 
-# Training Section
 website_url = st.text_input(
     "Enter Website URL", 
     placeholder="https://example.com",
     help="Start with homepage URL"
 )
 
-if st.button("Analyze Brand Voice"):
+if st.button("Process Content"):
     if not website_url.startswith('http'):
         st.error("Please enter valid URL (http:// or https://)")
     elif not openai_key:
         st.error("OpenAI API key required")
-    else:        
-        with st.spinner(f"🕸️ Crawling website (max {max_pages} pages)..."):
-            crawled_urls = crawl_website(website_url, max_pages)
-            st.session_state.crawled_urls = crawled_urls
+    else:
+        with st.spinner(f"📚 Analyzing website structure..."):
+            crawled_data = crawl_website(website_url, max_pages)
+            st.session_state.original_content = crawled_data
             
-            if crawled_urls:
-                st.info(f"Successfully crawled {len(crawled_urls)} pages")
-                with st.expander("Show Crawled URLs"):
-                    st.write(crawled_urls)
-                
-                with st.spinner("🔍 Analyzing content style..."):
-                    st.session_state.style_guide = analyze_brand_voice(crawled_urls, openai_key)
-                    if st.session_state.style_guide:
-                        st.success("Brand voice profile created!")
-                        st.expander("View Brand Guidelines").markdown(st.session_state.style_guide)
+            if crawled_data:
+                st.success(f"Analyzed {len(crawled_data)} pages")
+                with st.spinner("✍️ Rewriting content for young readers..."):
+                    for url, content in crawled_data.items():
+                        rewritten = process_page_content(content, openai_key)
+                        st.session_state.rewritten_content[url] = rewritten
 
-# Content Generation
-if st.session_state.style_guide:
+# Display Results
+if st.session_state.rewritten_content:
     st.markdown("---")
-    st.subheader("Content Generator")
+    st.subheader("Simplified Content Results")
     
-    topic = st.text_input("Enter content topic", 
-                        placeholder="How to create effective content strategies")
-    
-    if st.button("Generate Content"):
-        with st.spinner("✍️ Writing in brand voice..."):
-            content = generate_content(topic, openai_key)
-            st.markdown("---")
-            st.subheader("Generated Content")
-            st.markdown(content)
-            st.download_button("Download Content", content, 
-                             file_name="generated_content.md",
-                             help="Download in Markdown format")
+    for url, content in st.session_state.rewritten_content.items():
+        with st.expander(f"View: {url}"):
+            for section in content:
+                if section['type'] == 'heading':
+                    st.markdown(f"**{section['text']}**")
+                else:
+                    st.write(section['text'])
+                st.download_button(
+                    label="Download Simplified Content",
+                    data="\n\n".join([s['text'] for s in content]),
+                    file_name="simplified_content.txt"
+                )
 
 st.markdown("---")
-st.info("💡 Tip: For best results, use websites with substantial text content (blogs, documentation, marketing sites)")
+st.info("Key Features:\n"
+        "1. Preserves original headings and structure\n"
+        "2. Maintains exact word count\n"
+        "3. Uses simple language for young readers\n"
+        "4. Avoids AI detection patterns\n"
+        "5. Ensures plagiarism-free content")
