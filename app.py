@@ -101,7 +101,7 @@ def rewrite_content_section(text, original_word_count, api_key):
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.9  # Higher randomness for originality
+            temperature=0.9
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
@@ -112,19 +112,14 @@ def process_page_content(page_content, api_key):
     rewritten = []
     for section in page_content:
         if section['type'] == 'heading':
-            # Preserve original headings
             rewritten.append(section)
         else:
-            # Calculate original word count
             original_words = len(re.findall(r'\w+', section['text']))
-            
-            # Rewrite paragraph
             rewritten_text = rewrite_content_section(section['text'], original_words, api_key)
             
-            # Verify word count
             new_words = len(re.findall(r'\w+', rewritten_text))
             if new_words != original_words:
-                rewritten_text += " " * (original_words - new_words)  # Simple padding if needed
+                rewritten_text += " " * (original_words - new_words)
             
             rewritten.append({
                 'type': 'paragraph',
@@ -173,18 +168,22 @@ if st.session_state.rewritten_content:
     st.markdown("---")
     st.subheader("Simplified Content Results")
     
-    for url, content in st.session_state.rewritten_content.items():
+    for idx, (url, content) in enumerate(st.session_state.rewritten_content.items()):
         with st.expander(f"View: {url}"):
             for section in content:
                 if section['type'] == 'heading':
                     st.markdown(f"**{section['text']}**")
                 else:
                     st.write(section['text'])
-                st.download_button(
-                    label="Download Simplified Content",
-                    data="\n\n".join([s['text'] for s in content]),
-                    file_name="simplified_content.txt"
-                )
+            
+            # Create unique download button for each page
+            sanitized_url = url.replace("https://", "").replace("/", "_")[:50]
+            st.download_button(
+                label="Download Simplified Content",
+                data="\n\n".join([s['text'] for s in content]),
+                file_name=f"simplified_{sanitized_url}.txt",
+                key=f"download_{idx}"  # Unique key based on index
+            )
 
 st.markdown("---")
 st.info("Key Features:\n"
