@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urlparse, urljoin
 from collections import deque
 import tldextract
-from openai import OpenAI
+import openai
 from datetime import datetime
 
 # Initialize session state
@@ -95,10 +95,10 @@ def crawl_website(start_url, max_pages=3):
         return {}
 
 def rewrite_content_section(text, original_word_count, api_key):
-    client = OpenAI(api_key=api_key)
+    openai.api_key = api_key
 
     prompt = f"""
-Rewrite the following content to be 100% unique and in professional UK English. Do NOT copy or rephrase — instead, completely reinterpret the ideas while keeping the meaning accurate. 
+Rewrite the following content to be 100% unique and in professional UK English. Do NOT copy or rephrase — instead, completely reinterpret the ideas while keeping the meaning accurate.
 
 - Write in a natural, human tone suitable for UK-based websites
 - Add stylistic variety and structural changes
@@ -107,18 +107,17 @@ Rewrite the following content to be 100% unique and in professional UK English. 
 - Ensure the output reads like expert-written, not AI-generated
 
 Content to rewrite:
-"""
 {text}
 """
 
     try:
-        response = client.chat.completions.create(
+        response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.8,
             top_p=0.9
         )
-        return response.choices[0].message.content.strip()
+        return response['choices'][0]['message']['content'].strip()
     except Exception as e:
         return f"Content optimization failed: {str(e)}"
 
