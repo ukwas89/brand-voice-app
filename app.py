@@ -1,8 +1,8 @@
 import streamlit as st
 import requests
-from urllib.parse import urljoin
-from bs4 import BeautifulSoup
 import openai
+from bs4 import BeautifulSoup
+from urllib.parse import urlparse, urljoin
 from collections import deque
 import tldextract
 
@@ -12,16 +12,25 @@ if 'style_guide' not in st.session_state:
 if 'crawled_urls' not in st.session_state:
     st.session_state.crawled_urls = []
 
-def crawl_website(base_url, max_pages=10):
-    """Crawl website starting from base URL"""
-    try:
-        domain = tldextract.extract(base_url).registered_domain
-        visited = set()
-        queue = deque([base_url])
-        pages_crawled = 0
-        urls = []
+def get_domain(url):
+    """Extract main domain from URL"""
+    extracted = tldextract.extract(url)
+    return f"{extracted.domain}.{extracted.suffix}"
 
-        while queue and pages_crawled < max_pages:
+def is_valid(url, main_domain):
+    """Check if URL belongs to same domain and is valid"""
+    parsed = urlparse(url)
+    return parsed.scheme in ['http', 'https'] and get_domain(url) == main_domain
+
+def crawl_website(start_url, max_pages=10):
+    """Crawl website starting from given URL"""
+    try:
+        main_domain = get_domain(start_url)
+        visited = set()
+        queue = deque([start_url])
+        crawled_urls = []
+        
+        while queue and len(crawled_urls) < max_pages:
             url = queue.popleft()
             
             if url in visited:
@@ -33,68 +42,74 @@ def crawl_website(base_url, max_pages=10):
                     continue
                     
                 soup = BeautifulSoup(response.text, 'html.parser')
-                
-                # Add to crawled URLs
-                urls.append(url)
-                pages_crawled += 1
+                crawled_urls.append(url)
                 visited.add(url)
                 
-                # Extract all links
+                # Find all links on page
                 for link in soup.find_all('a', href=True):
-                    href = link['href']
-                    full_url = urljoin(base_url, href)
-                    if tldextract.extract(full_url).registered_domain == domain:
-                        if full_url not in visited:
-                            queue.append(full_url)
-                            
+                    href = link['href'].split('#')[0]  # Remove fragments
+                    absolute_url = urljoin(url, href)
+                    if is_valid(absolute_url, main_domain) and absolute_url not in visited:
+                        queue.append(absolute_url)
+                        
             except Exception as e:
                 continue
                 
-        return urls
-
+        return crawled_urls
+    
     except Exception as e:
-        st.error(f"Crawling failed: {str(e)}")
+        st.error(f"Crawling error: {str(e)}")
         return []
 
-def analyze_content(urls):
-    """Analyze website content and create style guide"""
-    all_content = []
+def clean_content(html):
+    """Clean HTML content for analysis"""
+    soup = BeautifulSoup(html, 'html.parser')
+    
+    # Remove unwanted elements
+    for element in soup(['script', 'style', 'nav', 'footer', 'header', 'form', 'iframe']):
+        element.decompose()
+        
+    # Get main content or fallback to body
+    main_content = soup.find('main') or soup.find('article') or soup.body
+    
+    # Clean text
+    text = main_content.get_text(separator='\n', strip=True)
+    return ' '.join(text.split()[:1500])  # Limit to 1500 words
+
+def analyze_brand_voice(urls):
+    """Analyze website content to create brand voice profile"""
+    content_samples = []
     
     for url in urls:
         try:
-            response = requests.get(url, timeout=10)
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # Remove unwanted elements
-            for element in soup(['script', 'style', 'nav', 'footer', 'header']):
-                element.decompose()
-                
-            main_content = soup.find('main') or soup.body
-            text = main_content.get_text(separator=' ', strip=True)[:2000]  # Limit text length
-            all_content.append(f"URL: {url}\nCONTENT: {text}")
+            response = requests.get(url, timeout=15)
+            cleaned_text = clean_content(response.text)
+            content_samples.append(f"URL: {url}\nCONTENT: {cleaned_text}\n")
         except Exception as e:
             st.warning(f"Couldn't process {url}: {str(e)}")
     
-    if not all_content:
+    if not content_samples:
         return None
         
-    prompt = f"""Analyze this website content and create detailed brand guidelines covering these aspects:
-    1. Brand Voice (casual/formal, humorous/serious, emotional/rational)
-    2. Tone Preferences (authoritative, conversational, technical)
-    3. Sentence Structure (short vs long sentences, active/passive voice)
-    4. Vocabulary (industry-specific terms, simple/complex words)
-    5. Content Organization (section patterns, heading styles)
-    6. Frequently Addressed Topics
-    
-    Content samples:
-    {" ".join(all_content)}
-    
-    Format the output in clear markdown sections with bullet points."""
+    analysis_prompt = f"""Analyze the following website content to create detailed brand guidelines:
+
+{''.join(content_samples)}
+
+Create a comprehensive brand voice profile covering:
+1. Tone (formal/informal, serious/playful)
+2. Style (technical/conversational)
+3. Vocabulary (simple/complex, industry jargon)
+4. Sentence structure (short/long sentences)
+5. Content organization (section patterns)
+6. Target audience perception
+7. Frequently used phrases/words
+
+Present the analysis in clear markdown format with section headers."""
     
     try:
         response = openai.ChatCompletion.create(
             model="gpt-4",
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": analysis_prompt}],
             api_key=st.secrets.get("OPENAI_API_KEY", openai.api_key)
         )
         return response.choices[0].message.content
@@ -105,21 +120,21 @@ def analyze_content(urls):
 def generate_content(topic):
     """Generate content using brand voice"""
     if not st.session_state.style_guide:
-        return "No style guide available"
+        return "No brand voice profile available"
         
-    prompt = f"""Write a comprehensive article about: {topic}
-    
-    Strictly follow these brand guidelines:
-    {st.session_state.style_guide}
-    
-    Structure requirements:
-    - SEO-friendly title
-    - Introduction with hook
-    - 3-5 sections with H2 headings
-    - Bullet points where appropriate
-    - Real-world examples
-    - Actionable conclusion
-    - Natural keyword integration"""
+    prompt = f"""Write content about: {topic}
+
+Strictly follow these brand guidelines:
+{st.session_state.style_guide}
+
+Include:
+- SEO-optimized title
+- Engaging introduction
+- 3-5 subheadings with detailed content
+- Bullet points where appropriate
+- Real-world examples
+- Natural keyword integration
+- Conclusion with key takeaways"""
     
     try:
         response = openai.ChatCompletion.create(
@@ -131,56 +146,66 @@ def generate_content(topic):
     except Exception as e:
         return f"Generation failed: {str(e)}"
 
-# Streamlit UI Configuration
+# Streamlit UI
 st.set_page_config(page_title="Brand Voice Trainer", layout="wide")
 
-# Sidebar for API Configuration
+# Sidebar Configuration
 with st.sidebar:
-    st.header("🔑 API Configuration")
+    st.header("⚙️ Configuration")
     openai_key = st.text_input("OpenAI API Key", type="password")
+    max_pages = st.slider("Max Pages to Crawl", 3, 15, 5)
 
 # Main Interface
-st.title("🎯 Website Brand Voice Trainer")
-st.markdown("Enter your website URL to analyze its content style and generate on-brand content")
+st.title("🚀 Website Brand Voice Trainer")
+st.markdown("Analyze any website's content style and generate on-brand content")
 
 # Training Section
-st.subheader("1. Train on Website Content")
 website_url = st.text_input(
     "Enter Website URL", 
     placeholder="https://example.com",
-    help="Homepage URL of the website to analyze"
+    help="Start with homepage URL"
 )
 
 if st.button("Analyze Brand Voice"):
     if not website_url.startswith('http'):
-        st.error("Please enter a valid URL starting with http:// or https://")
+        st.error("Please enter valid URL (http:// or https://)")
     elif not openai_key:
         st.error("OpenAI API key required")
     else:
         openai.api_key = openai_key
-        with st.spinner("🕷️ Crawling website (this may take a minute)..."):
-            urls = crawl_website(website_url)
-            if urls:
-                st.session_state.crawled_urls = urls
-                st.info(f"Crawled {len(urls)} pages: {', '.join(urls[:3])}...")
+        
+        with st.spinner(f"🕸️ Crawling website (max {max_pages} pages)..."):
+            crawled_urls = crawl_website(website_url, max_pages)
+            st.session_state.crawled_urls = crawled_urls
+            
+            if crawled_urls:
+                st.info(f"Successfully crawled {len(crawled_urls)} pages")
+                with st.expander("Show Crawled URLs"):
+                    st.write(crawled_urls)
                 
-                with st.spinner("🧠 Analyzing content style..."):
-                    st.session_state.style_guide = analyze_content(urls)
+                with st.spinner("🔍 Analyzing content style..."):
+                    st.session_state.style_guide = analyze_brand_voice(crawled_urls)
                     if st.session_state.style_guide:
-                        st.success("Brand voice analysis complete!")
-                        st.expander("View Style Guide").write(st.session_state.style_guide)
+                        st.success("Brand voice profile created!")
+                        st.expander("View Brand Guidelines").markdown(st.session_state.style_guide)
 
-# Content Generation Section
+# Content Generation
 if st.session_state.style_guide:
-    st.subheader("2. Generate On-Brand Content")
-    topic = st.text_input("Content Topic", placeholder="How to create effective content strategies")
+    st.markdown("---")
+    st.subheader("Content Generator")
+    
+    topic = st.text_input("Enter content topic", 
+                        placeholder="How to create effective content strategies")
     
     if st.button("Generate Content"):
         with st.spinner("✍️ Writing in brand voice..."):
             content = generate_content(topic)
+            st.markdown("---")
             st.subheader("Generated Content")
             st.markdown(content)
-            st.download_button("Download Content", content, file_name="brand_content.md")
+            st.download_button("Download Content", content, 
+                             file_name="generated_content.md",
+                             help="Download in Markdown format")
 
 st.markdown("---")
-st.info("Note: This version crawls up to 10 pages from the website homepage. For better results, ensure your website has substantial text content.")
+st.info("💡 Tip: For best results, use websites with substantial text content (blogs, documentation, marketing sites)")
