@@ -45,7 +45,6 @@ def crawl_website(start_url, max_pages=3):
                     visited.add(url)
 
                     content_structure = []
-                    last_h2_index = -1
 
                     for tag in soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p']):
                         if tag.name.startswith('h'):
@@ -56,13 +55,11 @@ def crawl_website(start_url, max_pages=3):
                             }
                             content_structure.append(heading)
 
-                            # Automatically add a placeholder description paragraph after each heading
                             content_structure.append({
                                 'type': 'paragraph',
                                 'text': f"This section explains the topic: {heading['text']}."
                             })
 
-                            # Add an additional H3 under every H2
                             if heading['level'] == 2:
                                 content_structure.append({
                                     'type': 'heading',
@@ -100,22 +97,25 @@ def crawl_website(start_url, max_pages=3):
 def rewrite_content_section(text, original_word_count, api_key):
     client = OpenAI(api_key=api_key)
 
-    prompt = f"""Rewrite the following content into UK professional English:
+    prompt = f"""
+Rewrite the following content to be 100% unique and in professional UK English. Do NOT copy or rephrase — instead, completely reinterpret the ideas while keeping the meaning accurate. 
 
-1. Make it 100% unique
-2. Maintain original intent and clarity
-3. Add professional tone and UK spelling
-4. Improve coherence and readability
-5. Ensure it cannot be detected as AI-generated
+- Write in a natural, human tone suitable for UK-based websites
+- Add stylistic variety and structural changes
+- Include original sentence structures, synonyms, and transitions
+- Avoid any resemblance to the original phrasing
+- Ensure the output reads like expert-written, not AI-generated
 
-Original Text: {text}
+Content to rewrite:
+"""
+{text}
 """
 
     try:
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
+            temperature=0.8,
             top_p=0.9
         )
         return response.choices[0].message.content.strip()
@@ -130,9 +130,6 @@ def process_page_content(page_content, api_key):
         else:
             original_words = len(re.findall(r'\w+', section['text']))
             rewritten_text = rewrite_content_section(section['text'], original_words, api_key)
-            new_words = len(re.findall(r'\w+', rewritten_text))
-            if abs(new_words - original_words) > 2:
-                rewritten_text = section['text']
             rewritten.append({
                 'type': 'paragraph',
                 'text': rewritten_text
