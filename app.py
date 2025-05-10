@@ -84,7 +84,7 @@ def rewrite_content_section(text, original_word_count, api_key):
     
     prompt = f"""Rewrite this text while maintaining:
     - Original meaning and factual accuracy
-    - Simple language for 8-year-old comprehension
+    - Simple language & professional for 16-year-old comprehension
     - Unique phrasing (avoid AI patterns)
     - Exact word count: {original_word_count}
     
