@@ -1,10 +1,10 @@
 import streamlit as st
 import requests
-import openai
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, urljoin
 from collections import deque
 import tldextract
+from openai import OpenAI
 
 # Initialize session state
 if 'style_guide' not in st.session_state:
@@ -76,8 +76,9 @@ def clean_content(html):
     text = main_content.get_text(separator='\n', strip=True)
     return ' '.join(text.split()[:1500])  # Limit to 1500 words
 
-def analyze_brand_voice(urls):
+def analyze_brand_voice(urls, api_key):
     """Analyze website content to create brand voice profile"""
+    client = OpenAI(api_key=api_key)
     content_samples = []
     
     for url in urls:
@@ -107,18 +108,18 @@ Create a comprehensive brand voice profile covering:
 Present the analysis in clear markdown format with section headers."""
     
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4",
-            messages=[{"role": "user", "content": analysis_prompt}],
-            api_key=st.secrets.get("OPENAI_API_KEY", openai.api_key)
+            messages=[{"role": "user", "content": analysis_prompt}]
         )
         return response.choices[0].message.content
     except Exception as e:
         st.error(f"Analysis failed: {str(e)}")
         return None
 
-def generate_content(topic):
+def generate_content(topic, api_key):
     """Generate content using brand voice"""
+    client = OpenAI(api_key=api_key)
     if not st.session_state.style_guide:
         return "No brand voice profile available"
         
@@ -137,10 +138,9 @@ Include:
 - Conclusion with key takeaways"""
     
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4",
-            messages=[{"role": "user", "content": prompt}],
-            api_key=st.secrets.get("OPENAI_API_KEY", openai.api_key)
+            messages=[{"role": "user", "content": prompt}]
         )
         return response.choices[0].message.content
     except Exception as e:
@@ -171,9 +171,7 @@ if st.button("Analyze Brand Voice"):
         st.error("Please enter valid URL (http:// or https://)")
     elif not openai_key:
         st.error("OpenAI API key required")
-    else:
-        openai.api_key = openai_key
-        
+    else:        
         with st.spinner(f"🕸️ Crawling website (max {max_pages} pages)..."):
             crawled_urls = crawl_website(website_url, max_pages)
             st.session_state.crawled_urls = crawled_urls
@@ -184,7 +182,7 @@ if st.button("Analyze Brand Voice"):
                     st.write(crawled_urls)
                 
                 with st.spinner("🔍 Analyzing content style..."):
-                    st.session_state.style_guide = analyze_brand_voice(crawled_urls)
+                    st.session_state.style_guide = analyze_brand_voice(crawled_urls, openai_key)
                     if st.session_state.style_guide:
                         st.success("Brand voice profile created!")
                         st.expander("View Brand Guidelines").markdown(st.session_state.style_guide)
@@ -199,7 +197,7 @@ if st.session_state.style_guide:
     
     if st.button("Generate Content"):
         with st.spinner("✍️ Writing in brand voice..."):
-            content = generate_content(topic)
+            content = generate_content(topic, openai_key)
             st.markdown("---")
             st.subheader("Generated Content")
             st.markdown(content)
