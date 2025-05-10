@@ -8,13 +8,34 @@ CTA = "\n\n[Contact us today at 0161 464 4140 or book your consultation online](
 PHONE = "0161 464 4140"
 APPOINTMENT_URL = "https://solicitorsinmanchester.co.uk/book-an-appointment/"
 
-# Configure OpenAI
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+# Streamlit UI
+st.set_page_config(page_title="Legal Content Generator", page_icon="⚖️")
+
+st.title("⚖️ Manchester Solicitors Content Generator")
+st.markdown("Create professional legal content with integrated CTAs")
+
+with st.sidebar:
+    st.header("Configuration")
+    # API Key Input
+    api_key = st.text_input("Enter OpenAI API Key:", 
+                          type="password",
+                          help="Get your API key from https://platform.openai.com/account/api-keys")
+    
+    content_type = st.selectbox(
+        "Content Type",
+        ("Service Page", "Blog Post", "FAQ Section", "Landing Page")
+    )
+    creativity = st.slider("Creativity Level", 0.0, 1.0, 0.5)
 
 def generate_content(keyword, content_type, creativity):
     """
     Generate SEO-optimized content using OpenAI API
     """
+    if not api_key:
+        return "Please enter a valid OpenAI API key in the sidebar"
+    
+    client = OpenAI(api_key=api_key)
+    
     prompt = f"""
     Create professional legal content about {keyword} for a solicitor's website in Manchester. 
     Content type: {content_type}. Follow these guidelines:
@@ -43,20 +64,6 @@ def generate_content(keyword, content_type, creativity):
         return f"{content}\n\n{CTA}"
     except Exception as e:
         return f"Error generating content: {str(e)}"
-
-# Streamlit UI
-st.set_page_config(page_title="Legal Content Generator", page_icon="⚖️")
-
-st.title("⚖️ Manchester Solicitors Content Generator")
-st.markdown("Create professional legal content with integrated CTAs")
-
-with st.sidebar:
-    st.header("Configuration")
-    content_type = st.selectbox(
-        "Content Type",
-        ("Service Page", "Blog Post", "FAQ Section", "Landing Page")
-    )
-    creativity = st.slider("Creativity Level", 0.0, 1.0, 0.5)
 
 keyword = st.text_input("Primary Keyword", placeholder="Employment law advice")
 generate_button = st.button("Generate Content")
