@@ -1,120 +1,107 @@
 # app.py
 import streamlit as st
-import openai
+from openai import OpenAI
 import os
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+def setup_openai():
+    try:
+        if st.secrets.get("OPENAI_API_KEY"):
+            return OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+        return OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    except Exception as e:
+        st.error(f"API configuration error: {str(e)}")
+        st.stop()
+
+client = setup_openai()
 
 def generate_content(keyword):
-    prompt = f"""
-    Create a comprehensive 700-900 word professional legal blog post about '{keyword}' in UK immigration law,
-    following this exact structure:
-
-    1. Introduction (explain concept and human rights relevance)
-    2. Legal Framework (cite UK laws: Human Rights Act 1998, Immigration Rules)
-    3. Eligibility Criteria (bullet points with explanations)
-    4. Application Process (step-by-step guide)
-    5. Common Challenges (with practical examples)
-    6. Case Study (realistic scenario with outcome)
-    7. FAQs (5 questions with detailed answers)
-    8. Conclusion (summary and importance of legal advice)
-
-    Style Requirements:
-    - Professional tone with accessible language
-    - UK English spelling and legal terminology
-    - Varied sentence structures
-    - Natural paragraph transitions
-    - Integrated statistics where appropriate
-    - References to recent case law (2018-2023)
-    """
-    
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo-0125",
             messages=[
-                {"role": "system", "content": "You are a senior UK immigration solicitor with 20 years experience writing authoritative legal content."},
-                {"role": "user", "content": prompt}
+                {"role": "system", "content": """You are a senior UK immigration solicitor. Produce content that:
+                 - Uses natural, human-like variations
+                 - Avoids repetitive patterns
+                 - Includes UK legal specifics
+                 - Mixes sentence structures
+                 - Adds relevant case examples"""},
+                {"role": "user", "content": f"""Create a 700-word UK immigration blog post about {keyword} with:
+                 1. Introduction linking to human rights
+                 2. Legal framework (cite recent laws)
+                 3. Application process steps
+                 4. Common challenges
+                 5. Real case study
+                 6. FAQs
+                 7. Conclusion with legal advice reminder"""}
             ],
-            temperature=0.7,
+            temperature=0.75,
             max_tokens=1800
         )
         return response.choices[0].message.content
     except Exception as e:
-        return f"Error: {str(e)}"
+        st.error(f"Content generation failed: {str(e)}")
+        return None
 
 def generate_cta(original_cta, blog_content):
-    prompt = f"""
-    Rewrite this Call-to-Action (CTA) while maintaining its core message:
-    Original CTA: "{original_cta}"
-
-    Requirements:
-    - Align with this blog content: {blog_content[:1000]}...
-    - Use different wording structure
-    - Include urgency elements
-    - Add UK legal specific references
-    - Maintain professional tone
-    - Keep under 150 words
-    - Include natural language variations
-    """
-    
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are a legal marketing specialist expert in converting legal content."},
-                {"role": "user", "content": prompt}
+                {"role": "system", "content": "Rewrite CTAs to sound more human and varied while keeping legal compliance."},
+                {"role": "user", "content": f"""Original CTA: {original_cta}
+                
+                Blog context: {blog_content[:1000]}
+                
+                Create 3 variations that:
+                - Use different verbs
+                - Vary sentence starters
+                - Include UK legal keywords
+                - Avoid repetitive structures"""}
             ],
-            temperature=0.5,
-            max_tokens=200
+            temperature=0.65,
+            max_tokens=300
         )
         return response.choices[0].message.content
     except Exception as e:
-        return f"Error: {str(e)}"
+        st.error(f"CTA generation failed: {str(e)}")
+        return None
 
 def main():
-    st.set_page_config(page_title="UK Immigration Content Generator", layout="wide")
+    st.set_page_config(page_title="UK Law Content Generator", layout="centered")
     
-    st.title("🇬🇧 UK Immigration Content Generator")
-    st.markdown("---")
+    with st.sidebar:
+        st.header("Configuration")
+        api_key = st.text_input("OpenAI API Key", type="password")
+        if api_key:
+            os.environ["OPENAI_API_KEY"] = api_key
     
-    col1, col2 = st.columns([3, 2])
+    st.title("UK Immigration Content Generator")
     
-    with col1:
-        keyword = st.text_input("Enter legal topic keyword:", placeholder="e.g., Human Rights Application")
-        original_cta = st.text_area("Paste your original CTA:", height=150)
-        
-        if st.button("Generate Content"):
-            if not keyword:
-                st.warning("Please enter a keyword")
-                return
+    keyword = st.text_input("Enter legal topic keyword:", placeholder="E.g. 'Human Rights Application'")
+    original_cta = st.text_area("Paste your original CTA:", height=100)
+    
+    if st.button("Generate Content"):
+        if not keyword:
+            st.warning("Please enter a keyword")
+            return
+            
+        with st.spinner("Creating human-written style content..."):
+            blog_content = generate_content(keyword)
+            
+            if blog_content:
+                with st.expander("Generated Blog Content", expanded=True):
+                    st.write(blog_content)
                 
-            with st.spinner("Generating professional content..."):
-                blog_content = generate_content(keyword)
-                cta_rewrite = generate_cta(original_cta, blog_content) if original_cta else "No CTA provided"
+                if original_cta:
+                    cta_options = generate_cta(original_cta, blog_content)
+                    with st.expander("CTA Variations"):
+                        st.write(cta_options if cta_options else "Couldn't generate CTAs")
                 
-                st.session_state.blog_content = blog_content
-                st.session_state.cta_rewrite = cta_rewrite
-                
-    with col2:
-        if 'blog_content' in st.session_state:
-            st.subheader("Generated Content")
-            with st.expander("View Blog Content", expanded=True):
-                st.write(st.session_state.blog_content)
-                
-            if st.session_state.cta_rewrite:
-                st.markdown("---")
-                st.subheader("Optimized CTA")
-                with st.expander("View Rewritten CTA"):
-                    st.write(st.session_state.cta_rewrite)
-                    
                 st.download_button(
                     label="Download Content",
-                    data=f"{st.session_state.blog_content}\n\nCTA:\n{st.session_state.cta_rewrite}",
-                    file_name=f"{keyword.replace(' ', '_')}_content.txt",
-                    mime="text/plain"
+                    data=blog_content,
+                    file_name=f"{keyword.replace(' ', '_')}_content.md",
+                    mime="text/markdown"
                 )
 
 if __name__ == "__main__":
