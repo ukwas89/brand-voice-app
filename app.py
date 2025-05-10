@@ -97,6 +97,8 @@ def rewrite_content_section(text, original_word_count, api_key):
     
     Required output:
     - Clear, concise sentences
+    - Professional tone
+    - Detailed
     - Active voice preferred
     - Logical flow between ideas
     - Real-world examples where applicable
