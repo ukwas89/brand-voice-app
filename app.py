@@ -92,6 +92,8 @@ def rewrite_content_section(text, original_word_count, api_key):
     3. Ensure readability score below 8th grade level
     4. Preserve original word count: {original_word_count}
     5. Avoid AI detection patterns
+    6. Must be unique
+    7. UK English
     
     Original text: {text}
     
@@ -99,6 +101,7 @@ def rewrite_content_section(text, original_word_count, api_key):
     - Clear, concise sentences
     - Professional tone
     - Detailed
+    - Unique
     - Active voice preferred
     - Logical flow between ideas
     - Real-world examples where applicable
