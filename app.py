@@ -1,82 +1,82 @@
 # app.py
-import os
+
 import streamlit as st
-from openai import OpenAI
+import openai
 
-# Constants
-CTA = "\n\n[Contact us today at 0161 464 4140 or book your consultation online](https://solicitorsinmanchester.co.uk/book-an-appointment/)"
-PHONE = "0161 464 4140"
-APPOINTMENT_URL = "https://solicitorsinmanchester.co.uk/book-an-appointment/"
+# Set page configuration
+st.set_page_config(page_title="Legal Content Generator", layout="centered")
 
-# Streamlit UI
-st.set_page_config(page_title="Legal Content Generator", page_icon="⚖️")
+# Set OpenAI API key from Streamlit secrets
+openai.api_key = st.secrets["openai_api_key"]  # Add your key in .streamlit/secrets.toml
 
-st.title("⚖️ Manchester Solicitors Content Generator")
-st.markdown("Create professional legal content with integrated CTAs")
+# App title and description
+st.title("📄 Branded Legal Content Generator")
+st.write(
+    "Generate high-quality, SEO-optimised content for your Manchester-based immigration law firm. "
+    "Choose your content type, enter a keyword, and let the app craft persuasive legal content "
+    "with embedded calls-to-action (CTAs) to drive client engagement."
+)
 
-with st.sidebar:
-    st.header("Configuration")
-    # API Key Input
-    api_key = st.text_input("Enter OpenAI API Key:", 
-                          type="password",
-                          help="Get your API key from https://platform.openai.com/account/api-keys")
-    
-    content_type = st.selectbox(
-        "Content Type",
-        ("Service Page", "Blog Post", "FAQ Section", "Landing Page")
-    )
-    creativity = st.slider("Creativity Level", 0.0, 1.0, 0.5)
+# Sidebar inputs
+st.sidebar.header("✍️ Content Settings")
+content_type = st.sidebar.selectbox("Select Content Type:", ["Blog Post", "Service Page", "Landing Page", "FAQ"])
+keyword = st.sidebar.text_input("Primary Keyword (e.g. 'immigration solicitor Manchester'):")
+length = st.sidebar.selectbox("Content Length:", ["Short", "Standard", "Long"])
 
-def generate_content(keyword, content_type, creativity):
-    """
-    Generate SEO-optimized content using OpenAI API
-    """
-    if not api_key:
-        return "Please enter a valid OpenAI API key in the sidebar"
-    
-    client = OpenAI(api_key=api_key)
-    
-    prompt = f"""
-    Create professional legal content about {keyword} for a solicitor's website in Manchester. 
-    Content type: {content_type}. Follow these guidelines:
-    - Use UK English legal terminology
-    - Avoid AI-generated patterns
-    - Include natural keyword placement
-    - Structure with clear headings
-    - Focus on client benefits
-    - Maintain authoritative tone
-    - Include 3-5 key points
-    
-    Wrap the content in proper HTML formatting without <html> tags.
-    """
-    
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "You are a legal content writer for UK solicitors."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=creativity,
-            max_tokens=2000
+# Map length to approximate word count for guidance
+length_map = {"Short": "300–500 words", "Standard": "600–800 words", "Long": "1000+ words"}
+word_count = length_map[length]
+
+# Generate button
+if st.sidebar.button("Generate Content"):
+    if not keyword.strip():
+        st.error("⚠️ Please enter a keyword before generating content.")
+    else:
+        # Prompt engineering
+        prompt = (
+            f"Write a {length.lower()} {content_type.lower()} about \"{keyword}\" "
+            "for a Manchester-based immigration law firm's website. "
+            "Use UK English spelling. The tone must be formal, professional, informative and reassuring—"
+            "suitable for a solicitor's firm (similar to Reiss Edwards). "
+            f"Structure the content with clear headings and paragraphs. Aim for {word_count}. "
+            "Incorporate the keyword and closely related UK legal terms naturally throughout. "
+            "Make it SEO-friendly and accessible to the general public. "
+            "Ensure originality—do not copy existing sources. "
+            "Include at least two strong calls-to-action such as: "
+            "'Call us on 0161 464 4140' or 'book an appointment [here](https://solicitorsinmanchester.co.uk/book-an-appointment/)'. "
+            "Place CTAs in logical positions like the introduction and/or conclusion."
         )
-        content = response.choices[0].message.content
-        return f"{content}\n\n{CTA}"
-    except Exception as e:
-        return f"Error generating content: {str(e)}"
 
-keyword = st.text_input("Primary Keyword", placeholder="Employment law advice")
-generate_button = st.button("Generate Content")
-
-if generate_button and keyword:
-    with st.spinner("Generating professional content..."):
-        generated_content = generate_content(keyword, content_type, creativity)
-        st.markdown(generated_content, unsafe_allow_html=True)
+        # Display loading status
+        st.markdown("⏳ Generating content...")
         
-        st.success("Content generated! Remember to:")
-        st.markdown("1. Review for accuracy\n2. Add specific case examples\n3. Verify legal references")
-elif generate_button:
-    st.warning("Please enter a keyword to generate content")
+        try:
+            # OpenAI API call
+            response = openai.ChatCompletion.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": "You are a professional UK legal copywriter."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                max_tokens=1500
+            )
 
-st.markdown("---")
-st.markdown(f"**Need help?** Call {PHONE} or [book online]({APPOINTMENT_URL})")
+            # Extract content
+            content = response.choices[0].message.content
+
+            # Display result
+            st.success("✅ Content generated successfully!")
+            st.subheader("📑 Generated Content")
+            st.markdown(content, unsafe_allow_html=True)
+
+            # Download button
+            st.download_button(
+                label="📥 Download Content",
+                data=content,
+                file_name="legal_content.txt",
+                mime="text/plain"
+            )
+
+        except Exception as e:
+            st.error(f"❌ Error generating content: {e}")
